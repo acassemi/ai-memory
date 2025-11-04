@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title data-translate="title">Simulação de Memória LLM</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #f9fafb 0%, #e3f2fd 100%);
+      display: flex;
+      flex-direction: row;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 20px;
+      margin: 0;
+      font-size: 0.95em;
+      gap: 20px;
+      height: 100vh;
+      overflow: hidden;
+    }
+    .stage {
+      position: relative;
+      width: 700px;
+      height: 720px;
+      border: 3px solid #e5e7eb;
+      border-radius: 20px;
+      background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+      overflow: hidden;
+    }
+    .message, .history-block {
+      position: absolute;
+      width: 300px;
+      padding: 12px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      opacity: 0;
+      transition: all 1.2s cubic-bezier(0.4, 0, 0.2, 1);
+      font-size: 0.9em;
+      line-height: 1.4;
+    }
+    .message.user { 
+      background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%); 
+      left: -350px; 
+      border-left: 4px solid #3b82f6;
+      z-index: 1;
+    }
+    .message.llm { 
+      background: linear-gradient(135deg, #bbf7d0 0%, #86efac 100%); 
+      right: -350px; 
+      border-left: 4px solid #10b981;
+      z-index: 1;
+    }
+    .history-block { 
+      background: linear-gradient(135deg, #fcd34d 0%, #fbbf24 100%); 
+      left: -350px; 
+      opacity: 0; 
+      width: 300px;
+      border: 3px solid #f59e0b;
+      z-index: 10;
+      animation: pulse 2s infinite;
+      transition: all 1.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .history-block .line { 
+      background: rgba(255, 255, 255, 0.8); 
+      margin: 4px 0; 
+      padding: 8px; 
+      border-radius: 8px; 
+      border-left: 3px solid #f59e0b;
+      transition: all 0.3s ease;
+      font-size: 0.85em;
+    }
+    .history-block .line:hover { 
+      background: rgba(255, 255, 255, 0.95); 
+      transform: translateX(5px);
+    }
+
+    /* Context bar */
+    .bar-container { 
+      width: 100%; 
+      height: 22px; 
+      background: #e5e7eb; 
+      border-radius: 11px; 
+      overflow: hidden; 
+      margin-top: 8px; 
+      box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+      position: relative;
+    }
+    .bar { 
+      height: 100%; 
+      width: 0; 
+      background: linear-gradient(90deg, #22c55e 0%, #16a34a 50%, #15803d 100%); 
+      transition: width 2s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      overflow: hidden;
+    }
+    .bar::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 50%, transparent 100%);
+      animation: shimmer 2s infinite;
+    }
+    .bar-percentage {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #374151;
+      font-size: 0.75em;
+      font-weight: bold;
+      z-index: 10;
+    }
+
+    .info { 
+      background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); 
+      border: 2px solid #fcd34d; 
+      padding: 10px; 
+      border-radius: 8px; 
+      font-size: 0.8em; 
+      opacity: 0; 
+      transition: all 1s ease;
+      box-shadow: 0 3px 8px rgba(252, 211, 77, 0.3);
+      text-align: center;
+      line-height: 1.3;
+    }
+    .caption { font-size: 0.75em; color: #6b7280; margin-top: 6px; text-align: center; line-height: 1.2; }
+
+    .scenario-title {
+      position: absolute;
+      top: 10px;
+      left: 20px;
+      background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+      color: white;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 0.8em;
+      font-weight: bold;
+      opacity: 0;
+      transition: all 1s ease;
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+    }
+
+    .left-sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      min-width: 280px;
+      max-width: 280px;
+      padding: 20px;
+    }
+    
+    .controls {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      align-items: stretch;
+    }
+    
+    .main-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    
+    .context-section {
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 2px solid #e5e7eb;
+    }
+    .control-btn {
+      padding: 12px 20px;
+      border: none;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+      color: white;
+      cursor: pointer;
+      font-size: 0.9em;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+      width: 100%;
+      text-align: center;
+    }
+    .control-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
+    }
+    .language-selector {
+      padding: 12px 16px;
+      border: 2px solid #3b82f6;
+      border-radius: 8px;
+      background: white;
+      color: #3b82f6;
+      cursor: pointer;
+      font-size: 0.9em;
+      font-weight: 500;
+      transition: all 0.3s ease;
+      box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
+      outline: none;
+      width: 100%;
+    }
+    .language-selector:hover {
+      background: #f0f7ff;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+    }
+    .language-selector:focus {
+      background: #f0f7ff;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+
+    .progress-indicator {
+      margin-top: 15px;
+      text-align: center;
+      font-size: 0.75em;
+      color: #6b7280;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    
+    .progress-indicator.visible {
+      opacity: 1;
+    }
+    
+    .step-dots {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 5px;
+    }
+    
+    .step-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #d1d5db;
+      transition: all 0.3s ease;
+    }
+    
+    .step-dot.active {
+      background: #3b82f6;
+      transform: scale(1.2);
+    }
+    
+    .step-dot.completed {
+      background: #10b981;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.02); }
+    }
+    @keyframes shimmer {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(100%); }
+    }
+    @keyframes typing {
+      from { width: 0; }
+      to { width: 100%; }
+    }
+    @keyframes fadeInUp {
+      from { 
+        opacity: 0; 
+        transform: translateY(20px); 
+      }
+      to { 
+        opacity: 1; 
+        transform: translateY(0); 
+      }
+    }
+    
+    [data-translate] {
+      transition: opacity 0.3s ease;
+    }
+    
+    .language-changing [data-translate] {
+      opacity: 0.7;
+    }
+    
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+    
+    .sidebar-title {
+      font-size: 1.5em;
+      font-weight: bold;
+      color: #1f2937;
+      margin-bottom: 10px;
+      text-align: center;
+    }
+    
+    @media (prefers-reduced-motion: reduce) {
+      .message, .history-block, .scenario-title {
+        transition: opacity 0.3s ease !important;
+      }
+      
+      .bar {
+        transition: width 0.5s ease !important;
+      }
+      
+      @keyframes pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1); }
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="left-sidebar">
+    <h1 class="sidebar-title" data-translate="main-title">🧠 Simulação de Memória LLM</h1>
+    
+    <div class="controls">
+      <label for="languageSelector" class="sr-only">Select Language</label>
+      <select class="language-selector" id="languageSelector" onchange="changeLanguage()" aria-label="Language Selection">
+        <option value="pt">🇧🇷 Português</option>
+        <option value="en">🇺🇸 English</option>
+        <option value="es">🇪🇸 Español</option>
+      </select>
+      <button class="control-btn" onclick="restartAnimation()" data-translate="restart-btn" aria-label="Restart Animation">🔄 Reiniciar</button>
+      <button class="control-btn" onclick="pauseAnimation()" id="pauseBtn" data-translate="pause-btn" aria-label="Pause Animation">⏸️ Pausar</button>
+    </div>
+
+    <div class="context-section">
+      <div class="info" data-translate="context-info">📊 Janela de contexto sendo preenchida - Memória do LLM crescendo...</div>
+      <div class="bar-container">
+        <div class="bar"></div>
+        <div class="bar-percentage">0%</div>
+      </div>
+      <div class="caption" data-translate="context-caption">💾 Simulação de janela de contexto - Visualização em tempo real</div>
+
+      <div class="progress-indicator" id="progressIndicator">
+        <div data-translate="animation-step">Passo da animação</div>
+        <div class="step-dots">
+          <div class="step-dot" data-step="1"></div>
+          <div class="step-dot" data-step="2"></div>
+          <div class="step-dot" data-step="3"></div>
+          <div class="step-dot" data-step="4"></div>
+          <div class="step-dot" data-step="5"></div>
+          <div class="step-dot" data-step="6"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main-content">
+    <div class="stage">
+    <div class="scenario-title s1-title" data-translate="scenario1-title">📝 Cenário 1: Sem Histórico de Contexto</div>
+    <div class="scenario-title s2-title" data-translate="scenario2-title">🗂️ Cenário 2: Com Histórico de Contexto</div>
+    
+    <!-- First interaction -->
+    <div class="message user m1" style="top:50px;"><span data-translate="user-label">Usuário</span>: <span data-translate="question1">Quanto é 2+2?</span></div>
+    <div class="message llm m2" style="top:120px;">LLM: <span data-translate="answer1">4</span></div>
+    <div class="message user m3" style="top:190px;"><span data-translate="user-label">Usuário</span>: <span data-translate="question2">Qual foi minha primeira pergunta?</span></div>
+    <div class="message llm m4" style="top:260px;">LLM: <span data-translate="answer2">Não sei</span></div>
+
+    <!-- Second interaction -->
+    <div class="message user h1" style="top:50px;"><span data-translate="user-label">Usuário</span>: <span data-translate="question1">Quanto é 2+2?</span></div>
+    <div class="message llm h2" style="top:120px;">LLM: <span data-translate="answer1">4</span></div>
+    <div class="history-block h3" style="top:190px;">
+      <strong data-translate="history-block">Bloco de Histórico:</strong>
+      <div class="line"><span data-translate="user-label">Usuário</span>: <span data-translate="question1">Quanto é 2+2?</span></div>
+      <div class="line">LLM: <span data-translate="answer1">4</span></div>
+    <div class="line" style="background: #dbeafe;"><span data-translate="user-label">Usuário</span>: <span data-translate="question2">Qual foi minha primeira pergunta?</span></div> 
+    </div>
+    <div class="message llm h4" style="top:360px;">LLM: <span data-translate="answer3">Sua primeira mensagem foi: Quanto é 2+2?</span></div>
+    <div class="history-block h5-history" style="top:420px; height: 180px;">
+      <strong data-translate="history-block-extended">Bloco de Histórico (Estendido):</strong>
+      <div class="line"><span data-translate="user-label">Usuário</span>: <span data-translate="question1">Quanto é 2+2?</span></div>
+      <div class="line">LLM: <span data-translate="answer1">4</span></div>
+      <div class="line"><span data-translate="user-label">Usuário</span>: <span data-translate="question2">Qual foi minha primeira pergunta?</span></div>
+      <div class="line">LLM: <span data-translate="answer3">Sua primeira mensagem foi: Quanto é 2+2?</span></div>
+      <div class="line" style="top:520px; background: #dbeafe;"><span data-translate="user-label">Usuário</span>: <span data-translate="question3">Quanto é 2*2?</span></div>
+    </div>
+    <div class="message llm h6" style="top:650px;">LLM: <span data-translate="answer4">Minha memória está cheia e é melhor começar um novo chat.</span></div>
+    </div>
+  </div>
+
+  <script>
+    // Language translations
+    const translations = {
+      pt: {
+        'title': 'Simulação de Memória LLM',
+        'main-title': '🧠 Simulação de Memória LLM',
+        'restart-btn': '🔄 Reiniciar',
+        'pause-btn': '⏸️ Pausar',
+        'continue-btn': '▶️ Continuar',
+        'scenario1-title': '📝 Cenário 1: Sem Histórico de Contexto',
+        'scenario2-title': '🗂️ Cenário 2: Com Histórico de Contexto',
+        'user-label': 'Usuário',
+        'question1': 'Quanto é 2+2?',
+        'answer1': '4',
+        'question2': 'Qual foi minha primeira pergunta?',
+        'answer2': 'Não sei',
+        'question3': 'Quanto é 2*2?',
+        'answer3': 'Sua primeira mensagem foi: Quanto é 2+2?',
+        'answer4': 'Minha memória está cheia e é melhor começar um novo chat.',
+        'history-block': 'Bloco de Histórico:',
+        'history-block-extended': 'Bloco de Histórico (Estendido):',
+        'context-info': '📊 Janela de contexto sendo preenchida - Memória do LLM crescendo...',
+        'context-caption': '💾 Simulação de janela de contexto - Visualização em tempo real',
+        'animation-step': 'Passo da animação'
+      },
+      en: {
+        'title': 'LLM Memory Simulation',
+        'main-title': '🧠 LLM Memory Simulation',
+        'restart-btn': '🔄 Restart',
+        'pause-btn': '⏸️ Pause',
+        'continue-btn': '▶️ Continue',
+        'scenario1-title': '📝 Scenario 1: No Context History',
+        'scenario2-title': '🗂️ Scenario 2: With Context History',
+        'user-label': 'User',
+        'question1': 'What is 2+2?',
+        'answer1': '4',
+        'question2': 'What was my first question?',
+        'answer2': 'I don\'t know',
+        'question3': 'What is 2*2?',
+        'answer3': 'Your first message was: What is 2+2?',
+        'answer4': 'My memory is full and it\'s better to start a new chat.',
+        'history-block': 'History Block:',
+        'history-block-extended': 'History Block (Extended):',
+        'context-info': '📊 Context window being filled - LLM memory growing...',
+        'context-caption': '💾 Context window simulation - Real-time visualization',
+        'animation-step': 'Animation step'
+      },
+      es: {
+        'title': 'Simulación de Memoria LLM',
+        'main-title': '🧠 Simulación de Memoria LLM',
+        'restart-btn': '🔄 Reiniciar',
+        'pause-btn': '⏸️ Pausar',
+        'continue-btn': '▶️ Continuar',
+        'scenario1-title': '📝 Escenario 1: Sin Historial de Contexto',
+        'scenario2-title': '🗂️ Escenario 2: Con Historial de Contexto',
+        'user-label': 'Usuario',
+        'question1': '¿Cuánto es 2+2?',
+        'answer1': '4',
+        'question2': '¿Cuál fue mi primera pregunta?',
+        'answer2': 'No lo sé',
+        'question3': '¿Cuánto es 2*2?',
+        'answer3': 'Tu primer mensaje fue: ¿Cuánto es 2+2?',
+        'answer4': 'Mi memoria está llena y es mejor empezar un nuevo chat.',
+        'history-block': 'Bloque de Historial:',
+        'history-block-extended': 'Bloque de Historial (Extendido):',
+        'context-info': '📊 Ventana de contexto llenándose - Memoria del LLM creciendo...',
+        'context-caption': '💾 Simulación de ventana de contexto - Visualización en tiempo real',
+        'animation-step': 'Paso de animación'
+      }
+    };
+
+    let currentLanguage = 'pt';
+
+    function changeLanguage() {
+      const selector = document.getElementById('languageSelector');
+      currentLanguage = selector.value;
+      
+      // Add loading state
+      document.body.classList.add('language-changing');
+      
+      // Update document language
+      document.documentElement.lang = currentLanguage === 'pt' ? 'pt-BR' : currentLanguage === 'es' ? 'es-ES' : 'en-US';
+      
+      setTimeout(() => {
+        // Update all translatable elements
+        const translatableElements = document.querySelectorAll('[data-translate]');
+        translatableElements.forEach(element => {
+          const key = element.getAttribute('data-translate');
+          if (translations[currentLanguage] && translations[currentLanguage][key]) {
+            if (element.tagName === 'TITLE') {
+              element.textContent = translations[currentLanguage][key];
+            } else {
+              element.textContent = translations[currentLanguage][key];
+            }
+          }
+        });
+        
+        // Update pause button text if it's currently showing "Continue"
+        const pauseBtn = document.getElementById('pauseBtn');
+        if (isPaused) {
+          pauseBtn.textContent = translations[currentLanguage]['continue-btn'];
+        }
+        
+        // Remove loading state
+        document.body.classList.remove('language-changing');
+        
+        // Restart animation to show new language
+        restartAnimation();
+      }, 100);
+    }
+
+    let animationTimeouts = [];
+    let isPaused = false;
+    let currentStep = 0;
+    let totalSteps = 6;
+    let animationStartTime = 0;
+    let pauseStartTime = 0;
+    let totalPausedTime = 0;
+
+    function updateProgressIndicator(step) {
+      const indicator = document.getElementById('progressIndicator');
+      const dots = document.querySelectorAll('.step-dot');
+      
+      if (step > 0) {
+        indicator.classList.add('visible');
+      } else {
+        indicator.classList.remove('visible');
+      }
+      
+      dots.forEach((dot, index) => {
+        const dotStep = index + 1;
+        dot.classList.remove('active', 'completed');
+        
+        if (dotStep < step) {
+          dot.classList.add('completed');
+        } else if (dotStep === step) {
+          dot.classList.add('active');
+        }
+      });
+    }
+
+    function showElement(el) {
+      el.style.opacity = '1';
+      if(el.classList.contains('user')) {
+        el.style.left = '20px';
+        el.style.transform = 'scale(1.05)';
+        setTimeout(() => el.style.transform = 'scale(1)', 200);
+      }
+      if(el.classList.contains('llm')) {
+        el.style.right = '20px';
+        el.style.transform = 'scale(1.05)';
+        setTimeout(() => el.style.transform = 'scale(1)', 200);
+      }
+      if(el.classList.contains('history-block')) {
+        el.style.left = '200px';
+        el.style.transform = 'scale(1.02)';
+        setTimeout(() => el.style.transform = 'scale(1)', 200);
+      }
+      if(el.classList.contains('scenario-title')) {
+        el.style.opacity = '1';
+        el.style.transform = 'translateY(0)';
+      }
+    }
+
+    function hideAllMessages() {
+      document.querySelectorAll('.message, .history-block, .scenario-title').forEach(el => {
+        el.style.opacity = '0';
+        if(el.classList.contains('user')) el.style.left = '-350px';
+        if(el.classList.contains('llm')) el.style.right = '-350px';
+        if(el.classList.contains('history-block')) {
+          el.style.left = '-350px';
+          el.style.transform = 'scale(1)';
+        }
+        if(el.classList.contains('scenario-title')) el.style.transform = 'translateY(-20px)';
+      });
+    }
+
+    function updateContextBar(percentage) {
+      const bar = document.querySelector('.bar');
+      const percentageEl = document.querySelector('.bar-percentage');
+      bar.style.width = percentage + '%';
+      percentageEl.textContent = percentage + '%';
+      
+      // Change color based on percentage
+      if (percentage > 80) {
+        bar.style.background = 'linear-gradient(90deg, #ef4444 0%, #dc2626 50%, #b91c1c 100%)';
+      } else if (percentage > 60) {
+        bar.style.background = 'linear-gradient(90deg, #f59e0b 0%, #d97706 50%, #b45309 100%)';
+      } else {
+        bar.style.background = 'linear-gradient(90deg, #22c55e 0%, #16a34a 50%, #15803d 100%)';
+      }
+    }
+
+    function addTimeout(callback, delay, stepNumber = 0) {
+      if (isPaused) return;
+      const timeout = setTimeout(() => {
+        if (!isPaused) {
+          currentStep = stepNumber;
+          callback();
+        }
+      }, delay);
+      animationTimeouts.push({ timeout, originalDelay: delay, stepNumber, callback });
+      return timeout;
+    }
+
+    function resumeAnimation() {
+      if (isPaused) return;
+      
+      const currentTime = Date.now();
+      const elapsedTime = currentTime - animationStartTime - totalPausedTime;
+      
+      // Clear any existing timeouts
+      clearAllTimeouts();
+      
+      // Continue from where we left off
+      continueAnimationFrom(elapsedTime);
+    }
+
+    function continueAnimationFrom(elapsedTime) {
+      // Define all animation steps with their timings
+      const animationSteps = [
+        { delay: 500, step: 1, action: () => {
+          showElement(document.querySelector('.s1-title'));
+          updateContextBar(5);
+          updateProgressIndicator(1);
+        }},
+        { delay: 1500, step: 1, action: () => {
+          showElement(document.querySelector('.m1'));
+          updateContextBar(15);
+        }},
+        { delay: 3500, step: 1, action: () => {
+          showElement(document.querySelector('.m2'));
+          updateContextBar(25);
+        }},
+        { delay: 5500, step: 1, action: () => {
+          showElement(document.querySelector('.m3'));
+          updateContextBar(35);
+        }},
+        { delay: 7500, step: 1, action: () => {
+          showElement(document.querySelector('.m4'));
+          updateContextBar(45);
+        }},
+        { delay: 9000, step: 2, action: () => {
+          document.querySelectorAll('.m1, .m2, .m3, .m4, .s1-title').forEach(el => {
+            el.style.opacity = '0';
+            if(el.classList.contains('user')) el.style.left = '-350px';
+            if(el.classList.contains('llm')) el.style.right = '-350px';
+            if(el.classList.contains('scenario-title')) el.style.transform = 'translateY(-20px)';
+          });
+          showElement(document.querySelector('.s2-title'));
+          updateContextBar(10);
+          updateProgressIndicator(2);
+        }},
+        { delay: 10500, step: 2, action: () => {
+          showElement(document.querySelector('.h1'));
+          updateContextBar(20);
+        }},
+        { delay: 12500, step: 2, action: () => {
+          showElement(document.querySelector('.h2'));
+          updateContextBar(30);
+        }},
+        { delay: 14500, step: 3, action: () => {
+          const historyBlock = document.querySelector('.h3');
+          showElement(historyBlock);
+          updateContextBar(60);
+          updateProgressIndicator(3);
+        }},
+        { delay: 16500, step: 3, action: () => {
+          showElement(document.querySelector('.h4'));
+          updateContextBar(75);
+        }},
+        { delay: 18500, step: 4, action: () => {
+          const historyBlock2 = document.querySelector('.h5-history');
+          showElement(historyBlock2);
+          updateContextBar(90);
+          updateProgressIndicator(4);
+        }},
+        { delay: 20500, step: 5, action: () => {
+          showElement(document.querySelector('.h5'));
+          updateContextBar(98);
+          updateProgressIndicator(5);
+        }},
+        { delay: 22500, step: 6, action: () => {
+          showElement(document.querySelector('.h6'));
+          updateContextBar(100);
+          updateProgressIndicator(6);
+        }},
+        { delay: 24500, step: 6, action: () => {
+          document.querySelector('.info').style.opacity = '1';
+        }}
+      ];
+
+      // Execute only the steps that haven't happened yet
+      animationSteps.forEach(step => {
+        if (step.delay > elapsedTime) {
+          const remainingDelay = step.delay - elapsedTime;
+          addTimeout(step.action, remainingDelay, step.step);
+        } else {
+          // Execute immediately if this step should have already happened
+          step.action();
+        }
+      });
+    }
+
+    function clearAllTimeouts() {
+      animationTimeouts.forEach(item => {
+        if (item.timeout) {
+          clearTimeout(item.timeout);
+        } else {
+          clearTimeout(item);
+        }
+      });
+      animationTimeouts = [];
+    }
+
+    function pauseAnimation() {
+      isPaused = !isPaused;
+      const btn = document.getElementById('pauseBtn');
+      if (isPaused) {
+        pauseStartTime = Date.now();
+        clearAllTimeouts();
+        btn.innerHTML = translations[currentLanguage]['continue-btn'];
+      } else {
+        totalPausedTime += Date.now() - pauseStartTime;
+        btn.innerHTML = translations[currentLanguage]['pause-btn'];
+        // Resume animation from current step without restarting
+        resumeAnimation();
+      }
+    }
+
+    function restartAnimation() {
+      clearAllTimeouts();
+      isPaused = false;
+      currentStep = 0;
+      animationStartTime = 0;
+      pauseStartTime = 0;
+      totalPausedTime = 0;
+      document.getElementById('pauseBtn').innerHTML = translations[currentLanguage]['pause-btn'];
+      hideAllMessages();
+      document.querySelector('.info').style.opacity = '0';
+      updateContextBar(0);
+      updateProgressIndicator(0);
+      startAnimation();
+    }
+
+    function startAnimation() {
+      if (isPaused) return;
+      
+      // Initialize timing
+      animationStartTime = Date.now();
+      totalPausedTime = 0;
+      currentStep = 0;
+      
+      // Initialize - hide all elements
+      hideAllMessages();
+      document.querySelector('.info').style.opacity = '0';
+      updateContextBar(0);
+
+      // Use the new system
+      continueAnimationFrom(0);
+    }
+
+    // Initialize and start animation
+    changeLanguage(); // Set initial language
+    startAnimation();
+  </script>
+</body>
+</html>
