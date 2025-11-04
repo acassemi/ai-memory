@@ -3,7 +3,7 @@
 A lightweight, client-side demonstration that visualizes how a large language model's (LLM) context/window (memory) can affect responses. The demo animates two scenarios — one without context history and one with context history — to illustrate why past interactions matter for follow-up questions.
 
 ## Files
-- `LLM-Memory.html` — The full demo (single-file HTML + CSS + JS). Open this in a browser to view the animation and interactive controls.
+- `index.html` — The full demo (single-file HTML + CSS + JS). Open this in a browser to view the animation and interactive controls.
 
 ## Demo overview
 The demo is a polished, animated visualization (Portuguese default) showing:
@@ -16,7 +16,7 @@ The animation uses a sequence of timed steps to reveal messages, history blocks 
 
 ## How to run (locally)
 1. Open the demo directly in your browser:
-   - Double-click `LLM-Memory.html` or open it via `File → Open` in a browser.
+   - Double-click `index.html` or open it via `File → Open` in a browser.
 
 
 ## Controls & UI
